@@ -1,0 +1,45 @@
+[Unit]
+# Puts the display back to whatever `krakenlcd` last put on it.  The cooler
+# forgets its screen at every power cycle, so without this the panel comes up
+# on the firmware's white temperature screen after each boot.
+#
+# This is a *user* service on purpose: the udev rule grants access to the
+# active seat user, not to root-at-boot, so there is nobody to talk to the
+# device before someone is logged in.
+#
+# Installed and enabled by install.sh; by hand:
+#     cp systemd/krakenlcd.service ~/.config/systemd/user/
+#     systemctl --user enable --now krakenlcd.service
+Description=Restore the NZXT Kraken Z display
+Documentation=https://github.com/ossini/krakenlcd
+After=graphical-session.target
+PartOf=graphical-session.target
+
+# The device and its ACL show up a moment after login; `--wait` covers most of
+# that, and a few slow restarts cover the rest.
+StartLimitIntervalSec=180
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# `restore` exits straight away for a colour, an image or the firmware screen,
+# and keeps running for the live temperature display.  Both are a success.
+ExecStart=%h/.local/bin/krakenlcd restore --wait 60
+# So a finished one-shot restore reads as "active (exited)" rather than dead.
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10s
+
+# Modest, deliberately: the whole point of this unit is that the display is
+# there after a reboot, and an over-tight sandbox that fails to set up would
+# defeat it.  PrivateDevices in particular must stay off — it would hide the
+# hidraw node we exist to talk to.  The leading `-` keeps a missing state
+# directory from turning into a start failure.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=-%h/.config/krakenlcd -%h/.cache/krakenlcd
+
+[Install]
+WantedBy=default.target

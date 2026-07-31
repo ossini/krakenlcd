@@ -1,0 +1,17 @@
+# NZXT Kraken Z53 / Z63 / Z73  (USB 1e71:3008)
+#
+# Grants the locally logged-in desktop user read/write access to the two
+# interfaces we need, so the driver does not have to run as root:
+#
+#   * the HID control interface (/dev/hidraw*)  -> commands, status, LCD control
+#   * the raw USB node (/dev/bus/usb/*/*)       -> bulk endpoint 0x02, image data
+#
+# TAG+="uaccess" makes systemd-logind attach an ACL for the active seat user.
+# MODE/GROUP are a fallback for non-logind setups.
+#
+# Installed by:   ./install.sh  or  ./scripts/install-udev.sh
+# Removed by:     ./install.sh --uninstall  or  ./scripts/uninstall-udev.sh
+# This is the only file this project puts outside the user's home directory.
+
+KERNEL=="hidraw*", ATTRS{idVendor}=="1e71", ATTRS{idProduct}=="3008", TAG+="uaccess", MODE="0660", GROUP="users"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1e71", ATTR{idProduct}=="3008", TAG+="uaccess", MODE="0660", GROUP="users"

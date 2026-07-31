@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "krakenlcd"
+version = "0.1.0"
+description = "Userspace driver and GUI for the NZXT Kraken Z LCD on Linux"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+keywords = ["nzxt", "kraken", "lcd", "hidraw", "usb", "hardware"]
+classifiers = [
+    "Environment :: Console",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Hardware",
+]
+
+# The protocol layer deliberately has no dependencies: talking to the device
+# is pure stdlib.  Pillow only comes in for rasterising text and re-encoding
+# image files, and PyQt6 only for the optional GUI.
+dependencies = ["pillow>=9"]
+
+[project.optional-dependencies]
+gui = ["PyQt6>=6.4"]
+
+[project.scripts]
+krakenlcd = "krakenlcd.cli:main"
+
+[project.gui-scripts]
+krakenlcd-gui = "krakenlcd.gui:main"
+
+[project.urls]
+Homepage = "https://github.com/ossini/krakenlcd"
+Issues = "https://github.com/ossini/krakenlcd/issues"
+
+[tool.setuptools]
+packages = ["krakenlcd"]

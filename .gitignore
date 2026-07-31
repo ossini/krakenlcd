@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Scratch space for captures and sample media used while poking at the device.
+captures/
+*.gif
+!docs/**/*.gif
