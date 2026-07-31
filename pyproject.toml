@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "krakenlcd"
-version = "0.1.0"
+version = "0.2.0b1"
 description = "Userspace driver and GUI for the NZXT Kraken Z LCD on Linux"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,3 +40,9 @@ Issues = "https://github.com/ossini/krakenlcd/issues"
 
 [tool.setuptools]
 packages = ["krakenlcd"]
+
+# The three fonts the dashboard is drawn with, so it looks the same on a
+# machine that has none of them installed.  All SIL Open Font License; the
+# licence texts sit next to them.
+[tool.setuptools.package-data]
+krakenlcd = ["fonts/*.ttf", "fonts/*.txt"]

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0b1 (unreleased)
+
+* `krakenlcd dash` — a gauge dashboard: a 270° scale from 30 to 100 °C, the
+  CPU temperature as the reading, the GPU along the bottom, and the whole
+  gauge turning red past `--hot`. `--big` and `--small` choose which of CPU,
+  GPU and coolant goes where; `--preview out.png` draws it without hardware.
+* The design is `design/kraken-2a-static.html`, transcribed into Pillow
+  drawing (`design/kraken_2a.py`) rather than rendered as HTML. A browser
+  would have meant ~200 MB of QtWebEngine and a resident Chromium for a
+  320-pixel panel, and rendering was never the bottleneck: ~1 ms of the frame
+  is drawing, ~48 ms is quantising and encoding it.
+* Chakra Petch Bold and JetBrains Mono ship in `krakenlcd/fonts/` (SIL Open
+  Font License, texts alongside), so the dial is set in the typefaces it was
+  designed in rather than in whatever the machine happens to have.
+* `krakenlcd sensors` — which hwmon nodes the readings come from, so a wrong
+  number can be traced. Intel `coretemp`, AMD `k10temp`/`zenpower`, AMD and
+  Intel graphics via hwmon, NVIDIA via `nvidia-smi`.
+* The panel is only redrawn when a number that is actually displayed changes,
+  and readings are damped (`--smooth`, 6 s by default) — a CPU package sensor
+  swings 30 °C between two seconds, which on a gauge reads as a twitch rather
+  than a temperature.
+* `dash` is recorded like every other display command, so the systemd user
+  service brings the dashboard back after a reboot.
+
 ## 0.1.0
 
 First release.

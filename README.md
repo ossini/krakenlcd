@@ -108,6 +108,8 @@ python3 -m krakenlcd.gui
 | `krakenlcd fill COLOUR` | flood the panel with one colour |
 | `krakenlcd gif FILE` | play an image or animated GIF, scaled to 320×320 |
 | `krakenlcd temp` | draw the liquid temperature, updating live |
+| `krakenlcd dash` | CPU/GPU gauge dashboard, updating live |
+| `krakenlcd sensors` | which temperature sensors were found |
 | `krakenlcd preview OUT.png` | render a screen to a file without touching hardware |
 | `krakenlcd restore` | show again whatever was showing last (see below) |
 | `krakenlcd liquid` | back to the firmware's own white screen |
@@ -128,6 +130,45 @@ krakenlcd fill white --bucket 4
 `krakenlcd temp` keeps running and re-uploads whenever the reading changes;
 stop it with Ctrl-C and the last frame stays on the panel. Add `--restore` to
 hand the display back to the firmware on exit, or `--once` for a single frame.
+
+### The dashboard
+
+```sh
+krakenlcd dash                      # CPU on the gauge, GPU underneath
+krakenlcd dash --big liquid         # coolant instead
+krakenlcd dash --hot 75 --max 90    # where red starts, and the scale
+krakenlcd dash --preview out.png    # draw it to a file, no hardware
+```
+
+A 270° scale from 30 to 100 °C, the reading in the middle, a second one along
+the bottom, and the gauge turning red above `--hot`. `--big` and `--small`
+pick from `cpu`, `gpu` and `liquid`.
+
+`krakenlcd sensors` prints where each number comes from — Intel `coretemp`,
+AMD `k10temp`/`zenpower`, AMD and Intel graphics via hwmon, NVIDIA via
+`nvidia-smi` — which is the first thing to check if a reading looks wrong.
+
+Two details worth knowing. The panel is only redrawn when a number that is
+actually on it changes, so a steady machine uploads nothing. And the readings
+are damped over six seconds by default (`--smooth`): a CPU package sensor
+genuinely swings 30 °C between one second of idle and the next of load, and
+undamped that is a flicker, not a measurement.
+
+The design is `design/kraken-2a-static.html`, and `design/kraken_2a.py` is the
+standalone transcription of it that the drawing code came from — the two are
+kept around so the dial can be read against its stylesheet. It is not
+rendered as HTML: that would mean shipping a browser to fill a 320-pixel
+panel, and drawing was never the expensive part (about 1 ms of a frame,
+against ~48 ms to quantise and encode it).
+
+The three fonts it is set in — Chakra Petch Bold for the numerals, JetBrains
+Mono for the labels — ship with the package under `krakenlcd/fonts/`, so the
+dial looks the same on a machine that has never installed either. Both are
+under the SIL Open Font License; the licence texts sit next to them.
+`--font` and `--mono-font` override them.
+
+Live, the dashboard costs about 1.5 % of one core at the default two-second
+interval, most of it re-encoding a changed frame.
 
 ### Surviving a reboot
 

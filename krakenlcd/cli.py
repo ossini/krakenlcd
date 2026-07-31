@@ -26,7 +26,7 @@ import signal
 import sys
 import time
 
-from . import media, state, tempscreen
+from . import dashboard, media, sensors, state, tempscreen
 from .device import DoubleBuffer, Kraken, read_hwmon_temp
 from .lowlevel import KrakenError, find_device
 
@@ -184,6 +184,121 @@ def cmd_temp(args):
         elif not args.once:
             print("\nstopped; the last frame stays on the display.\n"
                   "Run 'krakenlcd liquid' to hand it back to the firmware.")
+    return 0
+
+
+def _pick(readings, which):
+    """One named reading out of a sample, with the label to draw next to it."""
+    return {
+        "cpu": (readings.cpu, "CPU °C", "CPU"),
+        "gpu": (readings.gpu, "GPU °C", "GPU"),
+        "liquid": (readings.liquid, "LIQUID °C", "LIQ"),
+        "none": (None, "", ""),
+    }[which]
+
+
+def _dash_argv(args):
+    """The `dash` command as an argument list, for restore-at-boot."""
+    argv = ["dash",
+            "--big", args.big,
+            "--small", args.small,
+            "--interval", str(args.interval),
+            "--smooth", str(args.smooth),
+            "--min", str(args.min),
+            "--max", str(args.max),
+            "--hot", str(args.hot),
+            "--decimals", str(args.decimals),
+            "--bucket", str(args.bucket)]
+    if args.font:
+        argv += ["--font", os.path.abspath(args.font)]
+    if args.mono_font:
+        argv += ["--mono-font", os.path.abspath(args.mono_font)]
+    if args.rotate is not None:
+        argv += ["--rotate", str(args.rotate)]
+    if args.once:
+        argv.append("--once")
+    return argv
+
+
+def cmd_dash(args):
+    """The gauge dashboard, redrawn whenever a displayed number changes."""
+    big_label = _pick(sensors.Readings(), args.big)[1]
+    small_label = _pick(sensors.Readings(), args.small)[2]
+
+    render_kwargs = dict(scale_min=args.min, scale_max=args.max,
+                         hot_at=args.hot, label=big_label,
+                         sub_label=small_label, font_path=args.font,
+                         mono_path=args.mono_font, decimals=args.decimals)
+
+    if args.preview:
+        readings = sensors.read_all()
+        big = _pick(readings, args.big)[0]
+        small = _pick(readings, args.small)[0]
+        dashboard.save_png(args.preview, big, small, rotate=args.rotate or 0,
+                           **render_kwargs)
+        print(f"wrote {args.preview} (no device was touched)")
+        return 0
+
+    _install_signal_handlers()
+
+    with Kraken(args.serial) as k:
+        _save_display(args, _dash_argv(args))
+
+        rotate = k.lcd_info()["orientation"] if args.rotate is None \
+            else args.rotate
+        buf = DoubleBuffer(k, buckets=(args.bucket, args.bucket + 1))
+        buf.prepare()
+
+        smoother = dashboard.Smoother(args.smooth)
+        shown = None
+        last = None
+        while True:
+            now = time.monotonic()
+            dt = args.interval if last is None else now - last
+            last = now
+
+            readings = sensors.read_all()
+            big = smoother.feed("big", _pick(readings, args.big)[0], dt)
+            small = smoother.feed("small", _pick(readings, args.small)[0], dt)
+            # Only the numbers that end up on the panel decide whether it is
+            # worth an upload: a reading drifting by a hundredth of a degree
+            # would otherwise redraw an identical picture every few seconds.
+            key = dashboard.state_key(big, small, args.hot, args.decimals)
+            if key != shown:
+                data = dashboard.render_gif(big, small, rotate=rotate,
+                                            **render_kwargs)
+                buf.push(data)
+                shown = key
+                if args.verbose:
+                    print(f"[{time.strftime('%H:%M:%S')}] {key}  "
+                          f"({len(data) / 1024:.1f} KiB)", flush=True)
+
+            if args.once or _stop:
+                break
+
+            end = time.monotonic() + args.interval
+            while not _stop and time.monotonic() < end:
+                time.sleep(min(0.2, end - time.monotonic()))
+            if _stop:
+                break
+
+        if args.restore:
+            k.show_liquid_screen()
+            print("restored the firmware temperature screen")
+        elif not args.once:
+            print("\nstopped; the last frame stays on the display.")
+    return 0
+
+
+def cmd_sensors(args):
+    readings = sensors.read_all()
+    for line in sensors.describe_sources():
+        print(line)
+    print()
+    for name in ("cpu", "gpu", "liquid"):
+        value = getattr(readings, name)
+        print(f"{name:7s}: " + ("not available" if value is None
+                                else f"{value:.1f} °C"))
     return 0
 
 
@@ -407,6 +522,44 @@ def build_parser():
                    help="override the panel rotation read from the device")
     p.add_argument("--verbose", "-v", action="store_true")
     p.set_defaults(func=cmd_temp)
+
+    p = add("dash", help="CPU/GPU gauge dashboard, updating live")
+    p.add_argument("--big", default="cpu", choices=("cpu", "gpu", "liquid"),
+                   help="which reading drives the gauge (default cpu)")
+    p.add_argument("--small", default="gpu",
+                   choices=("cpu", "gpu", "liquid", "none"),
+                   help="the second reading, along the bottom (default gpu)")
+    p.add_argument("--min", type=float, default=30.0,
+                   help="low end of the scale (default 30)")
+    p.add_argument("--max", type=float, default=100.0,
+                   help="high end of the scale (default 100)")
+    p.add_argument("--hot", type=float, default=80.0,
+                   help="above this the gauge turns red (default 80)")
+    p.add_argument("--decimals", type=int, default=0, choices=(0, 1),
+                   help="digits after the decimal point (default 0)")
+    p.add_argument("--interval", "-i", type=float, default=2.0,
+                   help="seconds between readings (default 2)")
+    p.add_argument("--smooth", type=float, default=6.0, metavar="SECONDS",
+                   help="damp the readings over this long; a CPU package "
+                        "sensor is far too twitchy to show raw (default 6, "
+                        "0 turns it off)")
+    p.add_argument("--once", action="store_true",
+                   help="draw a single frame and exit")
+    p.add_argument("--restore", action="store_true",
+                   help="put the firmware screen back when stopping")
+    p.add_argument("--preview", metavar="OUT.png",
+                   help="render to a file instead, touching no hardware")
+    p.add_argument("--font", help="path to a .ttf for the big numerals")
+    p.add_argument("--mono-font", help="path to a .ttf for the small labels")
+    p.add_argument("--bucket", type=int, default=0,
+                   help="first of the two buckets to use (default 0)")
+    p.add_argument("--rotate", type=int, choices=(0, 90, 180, 270),
+                   help="override the panel rotation read from the device")
+    p.add_argument("--verbose", "-v", action="store_true")
+    p.set_defaults(func=cmd_dash)
+
+    add("sensors", help="show which temperature sensors were found"
+        ).set_defaults(func=cmd_sensors)
 
     p = add("preview", help="render to a PNG without a device")
     add_render_options(p)

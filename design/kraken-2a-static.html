@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Kraken 2a · Swiss / Skala · static</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== HIER ÄNDERN ================================================
+     --fill : Bogenfüllung 0 = 0 %   100 = 100 %
+     --ac   : Bogenfarbe (#111214 normal, #d8342a heiß)
+     Zahlen stehen unten direkt im HTML.
+     ================================================================= */
+  .face { --fill: 53; --ac: #111214; }
+
+  html,body { margin:0; height:100%; display:grid; place-items:center; background:#0c0d0f; }
+  .face {
+    position:relative; width:320px; height:320px; border-radius:50%; overflow:hidden;
+    background:#f4f4f1; font-family:'Chakra Petch','Helvetica Neue',Helvetica,Arial,sans-serif;
+    box-shadow:0 0 0 9px #14161a, 0 0 0 11px #31343a, 0 26px 50px -18px #000;
+  }
+  .arc {
+    position:absolute; inset:9px; border-radius:50%;
+    background:conic-gradient(from 225deg,
+      var(--ac) 0deg calc(var(--fill) * 2.7deg),
+      #dcdcd7 calc(var(--fill) * 2.7deg) 270deg,
+      rgba(0,0,0,0) 270deg 360deg);
+  }
+  .arc-inner { position:absolute; inset:6px; border-radius:50%; background:#f4f4f1; }
+
+  .tick { position:absolute; left:50%; top:50%; width:1px; height:160px; margin-left:-.5px;
+          transform-origin:50% 100%; transform:translateY(-160px) rotate(var(--a)); }
+  .tick > i { display:block; width:1px; height:7px; background:#a9aca8; margin:14px auto 0; }
+  .tick.maj > i { width:1.5px; height:13px; background:#111214; }
+  .tick.hot > i { background:#d8342a; }
+
+  .center { position:absolute; inset:0; display:flex; flex-direction:column;
+            align-items:center; justify-content:center; }
+  .big { font-weight:700; font-size:112px; line-height:.78; color:#111214;
+         letter-spacing:-.012em; font-variant-numeric:tabular-nums; }
+  .cap { display:flex; align-items:center; gap:8px; margin-top:20px; }
+  .cap span { font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.28em; color:#111214; }
+  .cap i { display:block; width:26px; height:1px; background:#111214; }
+
+  .state { position:absolute; left:0; right:0; top:44px; text-align:center;
+           font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.3em; color:#9a9d9f; }
+  .sub { position:absolute; left:0; right:0; bottom:44px; display:flex; justify-content:center;
+         gap:6px; align-items:baseline; font-family:'JetBrains Mono',monospace;
+         font-size:11px; color:#5c5f65; letter-spacing:.1em; }
+  .sub b { color:#111214; font-weight:700; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+
+<div class="face">
+  <div class="arc"><div class="arc-inner"></div></div>
+
+  <!-- Skala 30–100 °C, Zehner-Striche lang -->
+  <div class="tick maj" style="--a:-135deg"><i></i></div>
+  <div class="tick" style="--a:-115.71deg"><i></i></div>
+  <div class="tick maj" style="--a:-96.43deg"><i></i></div>
+  <div class="tick" style="--a:-77.14deg"><i></i></div>
+  <div class="tick maj" style="--a:-57.86deg"><i></i></div>
+  <div class="tick" style="--a:-38.57deg"><i></i></div>
+  <div class="tick maj" style="--a:-19.29deg"><i></i></div>
+  <div class="tick" style="--a:0deg"><i></i></div>
+  <div class="tick maj" style="--a:19.29deg"><i></i></div>
+  <div class="tick" style="--a:38.57deg"><i></i></div>
+  <div class="tick maj hot" style="--a:57.86deg"><i></i></div>
+  <div class="tick hot" style="--a:77.14deg"><i></i></div>
+  <div class="tick maj hot" style="--a:96.43deg"><i></i></div>
+  <div class="tick hot" style="--a:115.71deg"><i></i></div>
+  <div class="tick maj hot" style="--a:135deg"><i></i></div>
+
+  <div class="state">NORMAL</div>
+
+  <div class="center">
+    <div class="big">67</div>
+    <div class="cap"><i></i><span>CPU °C</span><i></i></div>
+  </div>
+
+  <div class="sub">GPU <b>71</b></div>
+</div>
+
+</body>
+</html>
