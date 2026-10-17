@@ -2,27 +2,49 @@
 
 ## 0.2.0b1 (unreleased)
 
-* `krakenlcd dash` — a gauge dashboard: a 270° scale from 30 to 100 °C, the
-  CPU temperature as the reading, the GPU along the bottom, and the whole
-  gauge turning red past `--hot`. `--big` and `--small` choose which of CPU,
-  GPU and coolant goes where; `--preview out.png` draws it without hardware.
-* The design is `design/kraken-2a-static.html`, transcribed into Pillow
-  drawing (`design/kraken_2a.py`) rather than rendered as HTML. A browser
-  would have meant ~200 MB of QtWebEngine and a resident Chromium for a
-  320-pixel panel, and rendering was never the bottleneck: ~1 ms of the frame
-  is drawing, ~48 ms is quantising and encoding it.
-* Chakra Petch Bold and JetBrains Mono ship in `krakenlcd/fonts/` (SIL Open
-  Font License, texts alongside), so the dial is set in the typefaces it was
-  designed in rather than in whatever the machine happens to have.
-* `krakenlcd sensors` — which hwmon nodes the readings come from, so a wrong
-  number can be traced. Intel `coretemp`, AMD `k10temp`/`zenpower`, AMD and
-  Intel graphics via hwmon, NVIDIA via `nvidia-smi`.
-* The panel is only redrawn when a number that is actually displayed changes,
-  and readings are damped (`--smooth`, 6 s by default) — a CPU package sensor
+* **Live designs.** `krakenlcd dash [DESIGN]` shows a live dashboard, and a
+  design is an SVG file with placeholders like `{{ cpu }}` where the numbers
+  go: made in Inkscape, Figma, a text editor or an AI chat, and dropped into
+  `~/.config/krakenlcd/designs/`. Three ship with the package: `swiss` (the
+  default), `simple` and `duo`. [docs/DESIGNS.md](docs/DESIGNS.md) is the
+  guide.
+* Placeholders are a small expression language (arithmetic, comparisons,
+  `a if c else b`, and functions such as `fmt`, `map`, `arc`, `ramp`) that is
+  parsed, never executed as Python, so a design from someone else can only
+  ever draw a picture. Mistakes are reported with the file, the line and
+  usually a suggestion.
+* A design's `data-*` attributes are its settings: changeable with
+  `--set NAME=VALUE`, or in a form the GUI builds for each design.
+* `krakenlcd design list | new | preview | folder`. `new` copies a design to
+  start from, or builds one around a picture (`--image`); `preview` draws one
+  into a PNG without a cooler, `--watch` keeps it current while editing.
+* `dash` redraws the moment the design file is saved, and keeps the last good
+  version on screen while an edit is broken.
+* More to show: CPU and GPU load, memory, pump and fan speed, the time and
+  date, besides CPU, GPU and coolant temperatures. `krakenlcd sensors` lists
+  them with their current values. Only the sensors a design uses are read, so
+  one without the GPU never starts `nvidia-smi`.
+* Designs are drawn with resvg (Rust, via the `resvg-py` wheel) rather than a
+  browser, and only when something visible changes: an unchanged refresh
+  costs well under a millisecond. Frames are now quantised and encoded with
+  Pillow, ~3 ms instead of ~50 ms with the pure-Python encoder, which also
+  speeds up `krakenlcd temp`.
+* The GUI has a *Live design* mode: design picker, settings form with colour
+  pickers, *New design …*, *Edit*, *Open folder*, and a preview that follows
+  the sensors. It shows only the controls the current mode uses.
+* Readings are damped (`--smooth`, 6 s by default): a CPU package sensor
   swings 30 °C between two seconds, which on a gauge reads as a twitch rather
   than a temperature.
 * `dash` is recorded like every other display command, so the systemd user
-  service brings the dashboard back after a reboot.
+  service brings it back after a reboot. The flags of earlier beta builds
+  (`--big`, `--small`, `--min`, `--max`, `--hot`, `--decimals`) are still
+  accepted and become the `swiss` design's settings.
+* Chakra Petch and JetBrains Mono ship in `krakenlcd/fonts/` (SIL Open Font
+  License, texts alongside). A design's own fonts sit next to it; system
+  fonts are found through fontconfig.
+* `krakenlcd --version`.
+* Unit tests (`python -m unittest discover -s tests`), run on every push by
+  GitHub Actions, along with the GUI offscreen and the install script.
 
 ## 0.1.0
 

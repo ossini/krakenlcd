@@ -1,17 +1,21 @@
 # krakenlcd
 
+[![tests](https://github.com/ossini/krakenlcd/actions/workflows/tests.yml/badge.svg)](https://github.com/ossini/krakenlcd/actions/workflows/tests.yml)
+
 Userspace driver, CLI and GUI for the LCD on **NZXT Kraken Z** coolers
 (Z53 / Z63 / Z73, USB ID `1e71:3008`) on Linux.
 
 NZXT ships no Linux software for the display, so the panel comes up with the
 firmware's white liquid-temperature screen and stays there. This project talks
-to it directly: flood it with any colour, play a GIF, or draw the temperature
-in a colour of your choosing.
+to it directly: flood it with any colour, play a GIF, or show a live dashboard
+of CPU, GPU, coolant and the rest, in a design you can make yourself.
 
 ```
+krakenlcd dash                # live CPU/GPU dashboard
+krakenlcd dash duo            # … in another design
+krakenlcd design new mine     # start your own: it's an SVG file
 krakenlcd fill '#ff0000'      # any colour, full screen
 krakenlcd gif party.gif       # animation, resized and rotated to fit
-krakenlcd temp --color amber  # live liquid temperature
 krakenlcd liquid              # hand it back to the firmware
 krakenlcd-gui                 # the same, with sliders
 ```
@@ -26,12 +30,14 @@ package and one udev rule.
 * Linux with `usbhid` (any stock kernel)
 * Python 3.10 or newer
 * [Pillow](https://python-pillow.org/) — text rendering and image re-encoding
+* [resvg-py](https://pypi.org/project/resvg-py/) — draws the live designs
+  (a prebuilt wheel of the Rust renderer, nothing to compile)
 * [PyQt6](https://pypi.org/project/PyQt6/) — only for the GUI
 
 The protocol layer itself (`krakenlcd.lowlevel`, `krakenlcd.device`, plus a GIF
 encoder and image scaler written from scratch) uses nothing but the standard
 library. If you only want `fill`, `liquid`, `brightness` and friends, you do
-not need Pillow either.
+not need Pillow or resvg either.
 
 ## Install
 
@@ -107,9 +113,12 @@ python3 -m krakenlcd.gui
 | `krakenlcd status` | liquid temperature, pump and fan, LCD brightness and rotation |
 | `krakenlcd fill COLOUR` | flood the panel with one colour |
 | `krakenlcd gif FILE` | play an image or animated GIF, scaled to 320×320 |
+| `krakenlcd dash [DESIGN]` | a live design: CPU, GPU, coolant, load, … |
+| `krakenlcd design list` | the designs there are, built-in and yours |
+| `krakenlcd design new NAME` | start a design of your own |
+| `krakenlcd design preview NAME` | draw a design into a PNG, no cooler needed |
+| `krakenlcd sensors` | what a design can show, and where it comes from |
 | `krakenlcd temp` | draw the liquid temperature, updating live |
-| `krakenlcd dash` | CPU/GPU gauge dashboard, updating live |
-| `krakenlcd sensors` | which temperature sensors were found |
 | `krakenlcd preview OUT.png` | render a screen to a file without touching hardware |
 | `krakenlcd restore` | show again whatever was showing last (see below) |
 | `krakenlcd liquid` | back to the firmware's own white screen |
@@ -131,44 +140,52 @@ krakenlcd fill white --bucket 4
 stop it with Ctrl-C and the last frame stays on the panel. Add `--restore` to
 hand the display back to the firmware on exit, or `--once` for a single frame.
 
-### The dashboard
+### Live designs
 
 ```sh
-krakenlcd dash                      # CPU on the gauge, GPU underneath
-krakenlcd dash --big liquid         # coolant instead
-krakenlcd dash --hot 75 --max 90    # where red starts, and the scale
-krakenlcd dash --preview out.png    # draw it to a file, no hardware
+krakenlcd dash                      # the default design, "swiss"
+krakenlcd dash duo                  # another one
+krakenlcd dash swiss --set big=liquid --set hot=40
+krakenlcd design list               # what there is
 ```
 
-A 270° scale from 30 to 100 °C, the reading in the middle, a second one along
-the bottom, and the gauge turning red above `--hot`. `--big` and `--small`
-pick from `cpu`, `gpu` and `liquid`.
+A design is an SVG file with placeholders where the numbers go:
+`{{ cpu }}`, `{{ fmt(gpu_load) }}%`, an arc that follows the CPU temperature,
+a colour that turns red past 80 °C. Three come with krakenlcd, and making
+your own takes a copy and a text editor (or Inkscape, Figma, an AI chat):
 
-`krakenlcd sensors` prints where each number comes from — Intel `coretemp`,
-AMD `k10temp`/`zenpower`, AMD and Intel graphics via hwmon, NVIDIA via
-`nvidia-smi` — which is the first thing to check if a reading looks wrong.
+```sh
+krakenlcd design new mine                   # a copy of "simple", in ~/.config/krakenlcd/designs
+krakenlcd design new mine --image pic.jpg   # or built around a picture of yours
+krakenlcd dash mine                         # on the cooler; redraws every time you save
+```
 
-Two details worth knowing. The panel is only redrawn when a number that is
-actually on it changes, so a steady machine uploads nothing. And the readings
-are damped over six seconds by default (`--smooth`): a CPU package sensor
-genuinely swings 30 °C between one second of idle and the next of load, and
-undamped that is a flicker, not a measurement.
+**[docs/DESIGNS.md](docs/DESIGNS.md)** is the guide: the placeholders, the
+functions, settings, fonts, recipes for arcs, needles and bars, and a prompt
+to hand to an AI. `krakenlcd sensors` lists what can be shown, with this
+machine's current values: CPU, GPU and coolant temperatures, CPU and GPU
+load, memory, pump and fan speed, and the time. They come from Intel
+`coretemp`, AMD `k10temp`/`zenpower`, AMD and Intel graphics via hwmon,
+NVIDIA via `nvidia-smi`, and the `nzxt-kraken3` driver for the cooler. If a
+reading looks wrong, `krakenlcd sensors` is also where to start.
 
-The design is `design/kraken-2a-static.html`, and `design/kraken_2a.py` is the
-standalone transcription of it that the drawing code came from — the two are
-kept around so the dial can be read against its stylesheet. It is not
-rendered as HTML: that would mean shipping a browser to fill a 320-pixel
-panel, and drawing was never the expensive part (about 1 ms of a frame,
-against ~48 ms to quantise and encode it).
+The `data-…` attributes of a design are its settings (`--set`, or a form in
+the GUI): the scale, the warning threshold, colours, which sensor goes where.
+That lets a design be adjusted without opening it.
 
-The three fonts it is set in — Chakra Petch Bold for the numerals, JetBrains
-Mono for the labels — ship with the package under `krakenlcd/fonts/`, so the
-dial looks the same on a machine that has never installed either. Both are
-under the SIL Open Font License; the licence texts sit next to them.
-`--font` and `--mono-font` override them.
+Designs are drawn with [resvg](https://github.com/linebender/resvg), not a
+browser, so a live dashboard stays cheap. A refresh reads the sensors that
+the design actually uses, fills in the placeholders, and stops right there
+if nothing visible changed. Only then is the picture drawn (~5–15 ms) and
+encoded for the cooler (~2–4 ms). The readings are damped over six seconds
+by default (`--smooth`): a CPU package sensor really does swing 30 °C between
+one second of idle and the next of load, and undamped that is a flicker, not
+a measurement.
 
-Live, the dashboard costs about 1.5 % of one core at the default two-second
-interval, most of it re-encoding a changed frame.
+The fonts the built-in designs use, Chakra Petch and JetBrains Mono, ship
+with the package under `krakenlcd/fonts/`, so they look the same on a
+machine that has never installed either. Both are under the SIL Open Font
+License; the licence texts sit next to them.
 
 ### Surviving a reboot
 
@@ -184,7 +201,7 @@ and the systemd **user** service installed above runs `krakenlcd restore` when
 you log in, which plays it back. Set it once —
 
 ```sh
-krakenlcd gif party.gif        # or fill, or temp, or liquid
+krakenlcd dash duo             # or gif, fill, temp, liquid
 krakenlcd brightness 65
 ```
 
@@ -220,15 +237,16 @@ systemctl --user disable --now krakenlcd.service   # stop restoring at login
 journalctl --user -u krakenlcd.service -b    # why it did not
 ```
 
-With `krakenlcd temp` as the saved mode the service simply keeps running, since
-that mode redraws the reading live. Everything else is a single upload and the
-unit finishes as `active (exited)`.
+With `krakenlcd dash` or `krakenlcd temp` as the saved mode the service simply
+keeps running, since those redraw live. Everything else is a single upload and
+the unit finishes as `active (exited)`.
 
 ### GUI
 
-`krakenlcd-gui` gives you a round live preview, a colour picker with presets
-and RGB sliders, a file picker for images and GIFs, and brightness and rotation
-controls. Dragging a colour slider updates the panel as you go — a flat colour
+`krakenlcd-gui` gives you a round live preview, a design picker with a field
+for each of the design's settings (and buttons to start or edit your own), a
+colour picker with presets and RGB sliders, a file picker for images and GIFs,
+and brightness and rotation controls. Dragging a colour slider updates the panel as you go — a flat colour
 encodes to about 500 bytes, so the round trip is imperceptible.
 
 ## What this does to your system
@@ -239,8 +257,9 @@ Deliberately as little as possible, and all of it reversible.
 `~/.local/share/krakenlcd` (with a copy of the source in `src/` next to it),
 two symlinks in `~/.local/bin`, a systemd **user** unit in
 `~/.config/systemd/user/krakenlcd.service`, and what to show at boot in
-`~/.config/krakenlcd` and `~/.cache/krakenlcd`. `--uninstall` removes all but
-the last two, which are yours and are named in the output. No system
+`~/.config/krakenlcd` (your designs too, under `designs/`) and
+`~/.cache/krakenlcd`. `--uninstall` removes all but the last two, which are
+yours and are named in the output. No system
 service, no shell profile is edited — the script only prints the `PATH` line
 for you to add if you want it.
 
@@ -326,6 +345,7 @@ panel and, on some firmware revisions, a different image format.
 
 ## Documentation
 
+* [docs/DESIGNS.md](docs/DESIGNS.md) — making your own live design
 * [docs/PROTOCOL.md](docs/PROTOCOL.md) — the wire protocol, in enough detail
   to write another implementation
 * `tools/probe.py` — send an arbitrary HID report and print the reply, which
