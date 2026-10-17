@@ -32,7 +32,7 @@ import subprocess
 import sys
 import time
 
-from . import design, media, sensors, state, tempscreen
+from . import __version__, design, media, sensors, state, tempscreen
 from .device import DoubleBuffer, Kraken, read_hwmon_temp
 from .lowlevel import KrakenError, find_device
 
@@ -589,6 +589,8 @@ def build_parser():
     ap = argparse.ArgumentParser(
         prog="krakenlcd",
         description="Talk to an NZXT Kraken Z LCD from userspace.")
+    ap.add_argument("--version", action="version",
+                    version=f"krakenlcd {__version__}")
     ap.add_argument("--serial", help="pick a specific cooler by serial number")
     ap.add_argument("--no-save", action="store_true",
                     help="apply this once without changing what comes back "

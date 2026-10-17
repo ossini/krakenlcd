@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "krakenlcd"
-version = "0.2.0b1"
+dynamic = ["version"]
 description = "Userspace driver and GUI for the NZXT Kraken Z LCD on Linux"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,6 +41,10 @@ Issues = "https://github.com/ossini/krakenlcd/issues"
 
 [tool.setuptools]
 packages = ["krakenlcd"]
+
+# One place for the version: krakenlcd/__init__.py, which --version reads too.
+[tool.setuptools.dynamic]
+version = {attr = "krakenlcd.__version__"}
 
 # The built-in designs, and the fonts they are set in, so they look the same
 # on a machine that has none of them installed.  The fonts are all SIL Open
