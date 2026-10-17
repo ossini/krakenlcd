@@ -7,16 +7,16 @@ to get a red one we redraw the same layout on the host and push it to the LCD
 as a normal image.  From the firmware's point of view it is just a picture;
 from the user's point of view it is the same screen in a different colour.
 
-Text rasterisation needs a font engine, so this module -- unlike the rest of
-the package -- uses Pillow.  Everything after rasterisation (quantisation,
-GIF encoding) goes back through the project's own stdlib code.
+Text rasterisation needs a font engine, so this module -- unlike the protocol
+layer -- uses Pillow, and so does the quantising and GIF encoding after it
+(`media.encode_frame`), which is the part that runs on every change.
 """
 
 from __future__ import annotations
 
 import os
 
-from . import gif, imaging
+from . import media
 from .device import HEIGHT, WIDTH
 
 __all__ = ["render", "render_gif", "parse_color", "COLORS"]
@@ -207,10 +207,10 @@ def render_gif(temp: float, **kwargs) -> bytes:
     a fresh one every few seconds costs almost nothing on the bus -- far less
     than the 400 KiB a raw RGBA frame would take.
     """
+    Image, _, _ = _pillow()
     rgb = render(temp, **kwargs)
-    indices, palette = imaging.quantize(rgb, 256)
-    return gif.encode(WIDTH, HEIGHT, [(bytes(indices), palette, 1000, -1)],
-                      loop=0)
+    # Already rotated by render(); encode_frame only quantises and wraps it.
+    return media.encode_frame(Image.frombytes("RGB", (WIDTH, HEIGHT), rgb))
 
 
 def save_png(path: str, temp: float, **kwargs):

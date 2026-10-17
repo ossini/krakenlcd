@@ -10,7 +10,8 @@ Flat fills go through the project's own encoder and need nothing but the
 stdlib.  Re-encoding an arbitrary GIF, though, means decoding, scaling and
 quantising dozens of frames, and the pure-Python versions of those take about
 a minute for a 45-frame clip.  That path therefore uses Pillow, which is
-already required for text rendering.
+already required for text rendering -- and so does `encode_frame`, the still
+a live design uploads every time a number on it changes.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import io
 from . import gif
 from .device import HEIGHT, WIDTH
 
-__all__ = ["solid", "prepare_gif", "prepare_image"]
+__all__ = ["solid", "prepare_gif", "prepare_image", "encode_frame"]
 
 
 def solid(color, width: int = WIDTH, height: int = HEIGHT) -> bytes:
@@ -107,3 +108,34 @@ def prepare_image(source, rotate: int = 0, geometry: str = "cover",
     """Same as prepare_gif but for a still: one frame, no animation."""
     return prepare_gif(source, rotate=rotate, geometry=geometry,
                        background=background, max_frames=1)
+
+
+def encode_frame(image, rotate: int = 0, background=(0, 0, 0)) -> bytes:
+    """One rendered still as a single-frame GIF, ready to upload.
+
+    This runs on every change of a live display, so it is Pillow's C
+    quantiser and encoder rather than the project's own: those are pure
+    Python and took ~50 ms a frame, most of what a live dashboard cost.
+    Pillow's take 2-4 ms.  The save call mirrors `prepare_gif`'s, whose
+    output the firmware has long been fed.
+
+    No dithering: the content is flat shapes and text, where dither would
+    only add noise that shimmers every time the number changes.
+    """
+    Image, _ = _pillow()
+    if image.mode != "RGB":
+        flat = Image.new("RGB", image.size, background)
+        rgba = image.convert("RGBA")
+        flat.paste(rgba, (0, 0), rgba)
+        image = flat
+    if image.size != (WIDTH, HEIGHT):
+        image = image.resize((WIDTH, HEIGHT), Image.LANCZOS)
+    if rotate % 360:
+        image = image.rotate(-(rotate % 360), resample=Image.BICUBIC,
+                             fillcolor=background)
+    indexed = image.quantize(256, method=Image.Quantize.MEDIANCUT,
+                             dither=Image.Dither.NONE)
+    buf = io.BytesIO()
+    indexed.save(buf, format="GIF", save_all=True, append_images=[],
+                 duration=[1000], loop=0, interlace=False)
+    return buf.getvalue()
