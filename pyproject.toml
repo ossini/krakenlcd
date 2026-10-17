@@ -21,9 +21,10 @@ classifiers = [
 ]
 
 # The protocol layer deliberately has no dependencies: talking to the device
-# is pure stdlib.  Pillow only comes in for rasterising text and re-encoding
-# image files, and PyQt6 only for the optional GUI.
-dependencies = ["pillow>=9"]
+# is pure stdlib.  Pillow comes in for rasterising text and encoding images,
+# resvg (a Rust SVG renderer, prebuilt wheels for every Linux architecture)
+# for drawing live designs, and PyQt6 only for the optional GUI.
+dependencies = ["pillow>=9.1", "resvg-py>=0.5,<0.6"]
 
 [project.optional-dependencies]
 gui = ["PyQt6>=6.4"]
@@ -41,8 +42,10 @@ Issues = "https://github.com/ossini/krakenlcd/issues"
 [tool.setuptools]
 packages = ["krakenlcd"]
 
-# The three fonts the dashboard is drawn with, so it looks the same on a
-# machine that has none of them installed.  All SIL Open Font License; the
-# licence texts sit next to them.
+# The built-in designs, and the fonts they are set in, so they look the same
+# on a machine that has none of them installed.  The fonts are all SIL Open
+# Font License; the licence texts sit next to them.
 [tool.setuptools.package-data]
-krakenlcd = ["fonts/*.ttf", "fonts/*.txt"]
+krakenlcd = ["fonts/*.ttf", "fonts/*.txt",
+             "designs/*/*.svg", "designs/*/*.png", "designs/*/*.jpg",
+             "designs/*/*.ttf", "designs/*/*.otf", "designs/*/*.txt"]

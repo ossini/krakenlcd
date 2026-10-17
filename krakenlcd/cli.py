@@ -8,6 +8,9 @@
     krakenlcd temp --color amber     ... in some other colour
     krakenlcd temp --once            draw it once and exit
     krakenlcd preview out.png        render to a file, touch no hardware
+    krakenlcd dash                   a live design: CPU, GPU, … updating
+    krakenlcd dash duo -s hot=90     another design, one setting changed
+    krakenlcd sensors                what a design can show
     krakenlcd liquid                 back to the firmware's white screen
     krakenlcd brightness 80
     krakenlcd restore                put back whatever was showing last
@@ -26,7 +29,7 @@ import signal
 import sys
 import time
 
-from . import dashboard, media, sensors, state, tempscreen
+from . import design, media, sensors, state, tempscreen
 from .device import DoubleBuffer, Kraken, read_hwmon_temp
 from .lowlevel import KrakenError, find_device
 
@@ -187,32 +190,44 @@ def cmd_temp(args):
     return 0
 
 
-def _pick(readings, which):
-    """One named reading out of a sample, with the label to draw next to it."""
-    return {
-        "cpu": (readings.cpu, "CPU °C", "CPU"),
-        "gpu": (readings.gpu, "GPU °C", "GPU"),
-        "liquid": (readings.liquid, "LIQUID °C", "LIQ"),
-        "none": (None, "", ""),
-    }[which]
+# The 0.2 beta's dashboard flags, which were the swiss design's settings
+# before there were designs.  Still accepted -- a saved state.json from the
+# beta replays them at login -- and passed on as settings.
+_LEGACY_DASH = (("big", "big"), ("small", "small"), ("min", "scale_min"),
+                ("max", "scale_max"), ("hot", "hot"), ("decimals", "decimals"))
 
 
-def _dash_argv(args):
+def _settings(args) -> dict:
+    """`--set NAME=VALUE`, plus the beta's flags spelled as settings."""
+    out = {}
+    for flag, setting in _LEGACY_DASH:
+        value = getattr(args, "legacy_" + flag, None)
+        if value is not None:
+            out[setting] = value
+    for item in getattr(args, "set", None) or []:
+        key, sep, value = item.partition("=")
+        if not sep or not key.strip():
+            raise ValueError(f"--set wants NAME=VALUE, e.g. --set hot=75 "
+                             f"(got {item!r})")
+        out[key.strip()] = value.strip()
+    return out
+
+
+def _design_ref(ref: str) -> str:
+    """A design as it should be remembered: by name, or by absolute path."""
+    entry = design.find(ref)
+    return ref if entry.name == ref and os.sep not in ref \
+        and not ref.lower().endswith(".svg") else os.path.abspath(entry.path)
+
+
+def _dash_argv(args, settings):
     """The `dash` command as an argument list, for restore-at-boot."""
-    argv = ["dash",
-            "--big", args.big,
-            "--small", args.small,
+    argv = ["dash", _design_ref(args.design),
             "--interval", str(args.interval),
             "--smooth", str(args.smooth),
-            "--min", str(args.min),
-            "--max", str(args.max),
-            "--hot", str(args.hot),
-            "--decimals", str(args.decimals),
             "--bucket", str(args.bucket)]
-    if args.font:
-        argv += ["--font", os.path.abspath(args.font)]
-    if args.mono_font:
-        argv += ["--mono-font", os.path.abspath(args.mono_font)]
+    for name, value in settings.items():
+        argv += ["--set", f"{name}={value}"]
     if args.rotate is not None:
         argv += ["--rotate", str(args.rotate)]
     if args.once:
@@ -220,57 +235,58 @@ def _dash_argv(args):
     return argv
 
 
-def cmd_dash(args):
-    """The gauge dashboard, redrawn whenever a displayed number changes."""
-    big_label = _pick(sensors.Readings(), args.big)[1]
-    small_label = _pick(sensors.Readings(), args.small)[2]
+def _now():
+    return time.strftime("%H:%M:%S")
 
-    render_kwargs = dict(scale_min=args.min, scale_max=args.max,
-                         hot_at=args.hot, label=big_label,
-                         sub_label=small_label, font_path=args.font,
-                         mono_path=args.mono_font, decimals=args.decimals)
+
+def cmd_dash(args):
+    """A live design, redrawn whenever something on it changes."""
+    settings = _settings(args)
+    live = design.Live(args.design, settings, smooth=args.smooth)
 
     if args.preview:
-        readings = sensors.read_all()
-        big = _pick(readings, args.big)[0]
-        small = _pick(readings, args.small)[0]
-        dashboard.save_png(args.preview, big, small, rotate=args.rotate or 0,
-                           **render_kwargs)
+        image = live.frame()
+        if args.rotate:
+            image = image.rotate(-(args.rotate % 360))
+        image.save(args.preview)
         print(f"wrote {args.preview} (no device was touched)")
         return 0
 
     _install_signal_handlers()
 
     with Kraken(args.serial) as k:
-        _save_display(args, _dash_argv(args))
+        _save_display(args, _dash_argv(args, settings))
 
         rotate = k.lcd_info()["orientation"] if args.rotate is None \
             else args.rotate
         buf = DoubleBuffer(k, buckets=(args.bucket, args.bucket + 1))
         buf.prepare()
+        print(f"showing '{live.design.title}' from {live.design.where}\n"
+              f"edit and save that file, and the display follows", flush=True)
 
-        smoother = dashboard.Smoother(args.smooth)
-        shown = None
-        last = None
+        first = True
+        failed = None
         while True:
-            now = time.monotonic()
-            dt = args.interval if last is None else now - last
-            last = now
-
-            readings = sensors.read_all()
-            big = smoother.feed("big", _pick(readings, args.big)[0], dt)
-            small = smoother.feed("small", _pick(readings, args.small)[0], dt)
-            # Only the numbers that end up on the panel decide whether it is
-            # worth an upload: a reading drifting by a hundredth of a degree
-            # would otherwise redraw an identical picture every few seconds.
-            key = dashboard.state_key(big, small, args.hot, args.decimals)
-            if key != shown:
-                data = dashboard.render_gif(big, small, rotate=rotate,
-                                            **render_kwargs)
+            if live.reload_if_changed():
+                print(f"[{_now()}] reloaded {live.design.where}", flush=True)
+            # Only what ends up on the panel decides whether it is worth an
+            # upload: unless a number on it changed, frame() returns None.
+            try:
+                image = live.frame()
+                failed = None
+            except design.DesignError as exc:
+                if first:
+                    raise
+                # Mid-edit breakage keeps the last good frame up.
+                if str(exc) != failed:
+                    print(f"[{_now()}] {exc}", file=sys.stderr, flush=True)
+                failed, image = str(exc), None
+            first = False
+            if image is not None:
+                data = media.encode_frame(image, rotate=rotate)
                 buf.push(data)
-                shown = key
                 if args.verbose:
-                    print(f"[{time.strftime('%H:%M:%S')}] {key}  "
+                    print(f"[{_now()}] redrawn "
                           f"({len(data) / 1024:.1f} KiB)", flush=True)
 
             if args.once or _stop:
@@ -291,14 +307,22 @@ def cmd_dash(args):
 
 
 def cmd_sensors(args):
-    readings = sensors.read_all()
     for line in sensors.describe_sources():
         print(line)
     print()
-    for name in ("cpu", "gpu", "liquid"):
-        value = getattr(readings, name)
-        print(f"{name:7s}: " + ("not available" if value is None
-                                else f"{value:.1f} °C"))
+    for name, sensor in sensors.SENSORS.items():
+        value = sensor.read()
+        if value is None:
+            shown = "not available"
+        elif sensor.step is None or sensor.step < 1:
+            shown = f"{value:.1f} {sensor.unit}"
+        else:
+            shown = f"{value:.0f} {sensor.unit}"
+        print(f"  {name:10s} {shown:15s} {sensor.label}")
+    for name, read in sensors.TEXT.items():
+        print(f"  {name:10s} {read():15s}")
+    print("\nIn a design, write any of these names between {{ }}, "
+          "e.g. {{ cpu }} or {{ fmt(ram_used, 1) }}.")
     return 0
 
 
@@ -523,20 +547,17 @@ def build_parser():
     p.add_argument("--verbose", "-v", action="store_true")
     p.set_defaults(func=cmd_temp)
 
-    p = add("dash", help="CPU/GPU gauge dashboard, updating live")
-    p.add_argument("--big", default="cpu", choices=("cpu", "gpu", "liquid"),
-                   help="which reading drives the gauge (default cpu)")
-    p.add_argument("--small", default="gpu",
-                   choices=("cpu", "gpu", "liquid", "none"),
-                   help="the second reading, along the bottom (default gpu)")
-    p.add_argument("--min", type=float, default=30.0,
-                   help="low end of the scale (default 30)")
-    p.add_argument("--max", type=float, default=100.0,
-                   help="high end of the scale (default 100)")
-    p.add_argument("--hot", type=float, default=80.0,
-                   help="above this the gauge turns red (default 80)")
-    p.add_argument("--decimals", type=int, default=0, choices=(0, 1),
-                   help="digits after the decimal point (default 0)")
+    def add_settings_option(p):
+        p.add_argument("--set", "-s", action="append", metavar="NAME=VALUE",
+                       help="change one of the design's settings, e.g. "
+                            "-s hot=75 (repeatable; 'krakenlcd design list' "
+                            "and the design file say which there are)")
+
+    p = add("dash", help="show a live design: CPU, GPU, … updating")
+    p.add_argument("design", nargs="?", default=design.DEFAULT,
+                   help="a design from 'krakenlcd design list', or the path "
+                        "of a .svg or design folder (default %(default)s)")
+    add_settings_option(p)
     p.add_argument("--interval", "-i", type=float, default=2.0,
                    help="seconds between readings (default 2)")
     p.add_argument("--smooth", type=float, default=6.0, metavar="SECONDS",
@@ -549,16 +570,16 @@ def build_parser():
                    help="put the firmware screen back when stopping")
     p.add_argument("--preview", metavar="OUT.png",
                    help="render to a file instead, touching no hardware")
-    p.add_argument("--font", help="path to a .ttf for the big numerals")
-    p.add_argument("--mono-font", help="path to a .ttf for the small labels")
     p.add_argument("--bucket", type=int, default=0,
                    help="first of the two buckets to use (default 0)")
     p.add_argument("--rotate", type=int, choices=(0, 90, 180, 270),
                    help="override the panel rotation read from the device")
     p.add_argument("--verbose", "-v", action="store_true")
+    for flag, _ in _LEGACY_DASH:
+        p.add_argument("--" + flag, dest="legacy_" + flag, help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_dash)
 
-    add("sensors", help="show which temperature sensors were found"
+    add("sensors", help="what a design can show, and where it comes from"
         ).set_defaults(func=cmd_sensors)
 
     p = add("preview", help="render to a PNG without a device")

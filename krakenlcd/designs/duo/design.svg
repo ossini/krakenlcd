@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"
+     data-hot="85" data-cpu-color="#36d1ff" data-gpu-color="#a98bff">
+  <title>Duo</title>
+  <desc>CPU above, GPU below: temperatures in the middle, load on the arcs either side.</desc>
+  <!--
+    Two readings each for CPU and GPU.  The arcs fill from the bottom up with
+    the load (left CPU, right GPU); the temperatures turn red at the hot mark.
+    Settings: hot, cpu-color, gpu-color.
+  -->
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#18202c"/>
+      <stop offset="1" stop-color="#07090c"/>
+    </radialGradient>
+  </defs>
+
+  <circle cx="160" cy="160" r="160" fill="url(#glow)"/>
+
+  <!-- Load arcs.  Angles count from twelve o'clock, clockwise, so the left
+       arc runs from -160 (near the bottom) up to -20, and the right one from
+       160 up to 20.  Each fills from its bottom end. -->
+  <g fill="none" stroke-width="8" stroke-linecap="round">
+    <path stroke="#1a222e" d="{{ arc(160, 160, 146, -160, -20) }}"/>
+    <path stroke="#1a222e" d="{{ arc(160, 160, 146, 20, 160) }}"/>
+    <path stroke="{{ cpu_color }}"
+          d="{{ arc(160, 160, 146, -160, map(cpu_load, 0, 100, -160, -20)) }}"/>
+    <path stroke="{{ gpu_color }}"
+          d="{{ arc(160, 160, 146, map(gpu_load, 0, 100, 160, 20), 160) }}"/>
+  </g>
+
+  <g font-family="JetBrains Mono" text-anchor="middle" font-size="12"
+     letter-spacing="3">
+    <text x="160" y="76" fill="{{ cpu_color }}">CPU · {{ fmt(cpu_load) }}%</text>
+    <text x="160" y="258" fill="{{ gpu_color }}">GPU · {{ fmt(gpu_load) }}%</text>
+  </g>
+
+  <g font-family="Chakra Petch" font-weight="700" text-anchor="middle"
+     font-size="68">
+    <text x="160" y="142" fill="{{ '#ff5a4f' if cpu >= hot else '#ffffff' }}">{{ fmt(cpu) }}°</text>
+    <text x="160" y="226" fill="{{ '#ff5a4f' if gpu >= hot else '#ffffff' }}">{{ fmt(gpu) }}°</text>
+  </g>
+
+  <line x1="112" y1="164" x2="208" y2="164" stroke="#2a3442" stroke-width="1"/>
+</svg>

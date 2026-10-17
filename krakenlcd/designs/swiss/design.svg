@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"
+     data-big="cpu" data-small="gpu"
+     data-scale-min="30" data-scale-max="100" data-hot="80" data-decimals="0">
+  <title>Swiss</title>
+  <desc>A 270° scale, the reading in the middle and a second one below; the gauge turns red past the hot mark.</desc>
+  <!--
+    The original krakenlcd dial, drawn from docs/swiss-reference.html.
+
+    Settings are the data-… attributes above.  Change them without editing
+    this file: in the GUI, or with the set option of the dash command,
+    e.g.  krakenlcd dash swiss -s hot=75  (see krakenlcd dash -h).
+      big          the reading on the gauge: cpu, gpu, liquid, cpu_load, …
+      small        the one along the bottom, or none
+      scale-min    where the scale starts and ends
+      scale-max
+      hot          from here up, the gauge and its ticks are red
+      decimals     0 or 1 digits after the point for the big reading
+  -->
+  <style>
+    .mono  { font-family: 'JetBrains Mono', monospace; }
+    .tick  { stroke: #a9aca8; stroke-width: 1; }
+    .major { stroke: #111214; stroke-width: 1.5; }
+    .hot   { stroke: #d8342a; }
+  </style>
+
+  <rect width="320" height="320" fill="#0c0d0f"/>
+  <circle cx="160" cy="160" r="160" fill="#f4f4f1"/>
+
+  <!-- The arc, 6 px wide just inside the rim: the grey track, and over it
+       the fill up to the reading, black or, past the hot mark, red.
+       Angles count from twelve o'clock, clockwise: -135 is 7:30. -->
+  <g fill="none" stroke-width="6">
+    <path stroke="#dcdcd7"
+          d="{{ arc(160, 160, 148, map(sensor(big) or scale_min, scale_min, scale_max, -135, 135), 135) }}"/>
+    <path stroke="{{ '#d8342a' if sensor(big) >= hot else '#111214' }}"
+          d="{{ arc(160, 160, 148, -135, map(sensor(big), scale_min, scale_max, -135, 135)) }}"/>
+  </g>
+
+  <!-- Fifteen ticks across the scale, long ones every other; those at or
+       past the hot mark are red. -->
+  <g>
+    <line class="tick major {{ 'hot' if scale_min + (scale_max - scale_min) * 0 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="27" transform="rotate(-135 160 160)"/>
+    <line class="tick {{ 'hot' if scale_min + (scale_max - scale_min) * 1 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="21" transform="rotate(-115.714 160 160)"/>
+    <line class="tick major {{ 'hot' if scale_min + (scale_max - scale_min) * 2 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="27" transform="rotate(-96.4286 160 160)"/>
+    <line class="tick {{ 'hot' if scale_min + (scale_max - scale_min) * 3 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="21" transform="rotate(-77.1429 160 160)"/>
+    <line class="tick major {{ 'hot' if scale_min + (scale_max - scale_min) * 4 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="27" transform="rotate(-57.8571 160 160)"/>
+    <line class="tick {{ 'hot' if scale_min + (scale_max - scale_min) * 5 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="21" transform="rotate(-38.5714 160 160)"/>
+    <line class="tick major {{ 'hot' if scale_min + (scale_max - scale_min) * 6 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="27" transform="rotate(-19.2857 160 160)"/>
+    <line class="tick {{ 'hot' if scale_min + (scale_max - scale_min) * 7 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="21" transform="rotate(0 160 160)"/>
+    <line class="tick major {{ 'hot' if scale_min + (scale_max - scale_min) * 8 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="27" transform="rotate(19.2857 160 160)"/>
+    <line class="tick {{ 'hot' if scale_min + (scale_max - scale_min) * 9 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="21" transform="rotate(38.5714 160 160)"/>
+    <line class="tick major {{ 'hot' if scale_min + (scale_max - scale_min) * 10 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="27" transform="rotate(57.8571 160 160)"/>
+    <line class="tick {{ 'hot' if scale_min + (scale_max - scale_min) * 11 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="21" transform="rotate(77.1429 160 160)"/>
+    <line class="tick major {{ 'hot' if scale_min + (scale_max - scale_min) * 12 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="27" transform="rotate(96.4286 160 160)"/>
+    <line class="tick {{ 'hot' if scale_min + (scale_max - scale_min) * 13 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="21" transform="rotate(115.714 160 160)"/>
+    <line class="tick major {{ 'hot' if scale_min + (scale_max - scale_min) * 14 / 14 >= hot else '' }}" x1="160" y1="14" x2="160" y2="27" transform="rotate(135 160 160)"/>
+  </g>
+
+  <!-- Status line at the top. -->
+  <text class="mono" x="160" y="53.75" text-anchor="middle" font-size="9"
+        letter-spacing="2.7" fill="#9a9d9f">{{ 'THERMAL LIMIT' if sensor(big) >= hot else 'UNTER LAST' if sensor(big) >= 68 else 'NORMAL' if sensor(big) >= 52 else 'LEERLAUF' if sensor(big) > -100 else 'KEIN SENSOR' }}</text>
+
+  <!-- The reading. -->
+  <text x="160" y="181.9" text-anchor="middle" font-family="Chakra Petch"
+        font-weight="700" font-size="112" fill="#111214">{{ fmt(sensor(big), decimals) }}</text>
+
+  <!-- Its caption, with a rule either side.  JetBrains Mono at 10 px is
+       6 px a character plus 2.8 px spacing, which is where the rules'
+       positions come from: they move out as the caption gets longer. -->
+  <text class="mono" x="160" y="217.3" text-anchor="middle" font-size="10"
+        letter-spacing="2.8" fill="#111214">{{ upper(big) }} °C</text>
+  <g stroke="#111214" stroke-width="1">
+    <line x1="{{ 127.4 - (len(big) + 3) * 4.4 }}" x2="{{ 153.4 - (len(big) + 3) * 4.4 }}" y1="213.68" y2="213.68"/>
+    <line x1="{{ 166.6 + (len(big) + 3) * 4.4 }}" x2="{{ 192.6 + (len(big) + 3) * 4.4 }}" y1="213.68" y2="213.68"/>
+  </g>
+
+  <!-- The second reading along the bottom: label in grey, value in black. -->
+  <text class="mono" x="160" y="273.4" text-anchor="middle" font-size="11"
+        letter-spacing="1.1" fill="#5c5f65"
+        visibility="{{ 'hidden' if small == 'none' else 'visible' }}">{{ upper(small) }} <tspan
+        font-weight="700" fill="#111214" letter-spacing="0">{{ fmt(sensor(small)) }}</tspan></text>
+</svg>
