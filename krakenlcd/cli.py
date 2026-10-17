@@ -10,6 +10,8 @@
     krakenlcd preview out.png        render to a file, touch no hardware
     krakenlcd dash                   a live design: CPU, GPU, … updating
     krakenlcd dash duo -s hot=90     another design, one setting changed
+    krakenlcd design list            the designs there are
+    krakenlcd design new mine        start your own
     krakenlcd sensors                what a design can show
     krakenlcd liquid                 back to the firmware's white screen
     krakenlcd brightness 80
@@ -26,6 +28,7 @@ what comes back next time.
 import argparse
 import os
 import signal
+import subprocess
 import sys
 import time
 
@@ -306,6 +309,101 @@ def cmd_dash(args):
     return 0
 
 
+def cmd_design_list(args):
+    entries = design.available()
+    print(f"Your designs go in {design.pretty_path(design.user_dir())}\n")
+    width = max(len(e.name) for e in entries)
+    for entry in entries:
+        kind = "built-in" if entry.builtin else "yours"
+        if entry.shadows:
+            kind = "yours, replaces the built-in one"
+        if entry.builtin and entry.name == design.DEFAULT:
+            kind += ", the default"
+        try:
+            loaded = design.load(entry)
+            about = loaded.description or loaded.title
+            if loaded.author:
+                kind += f", by {loaded.author}"
+        except design.DesignError as exc:
+            about = f"BROKEN: {str(exc).splitlines()[0]}"
+        if len(about) > 72:
+            about = about[:71] + "…"
+        print(f"  {entry.name:{width}}  {about}")
+        print(f"  {'':{width}}  ({kind})")
+    print("\nShow one:       krakenlcd dash NAME"
+          "\nTry it out:     krakenlcd design preview NAME"
+          "\nMake your own:  krakenlcd design new NAME")
+    return 0
+
+
+def cmd_design_new(args):
+    path = design.create(args.name, source=args.source, image=args.image)
+    if args.image:
+        origin = f"around {args.image}, scaled to 320x320"
+    else:
+        origin = f"a copy of '{args.source or design.STARTER}'"
+    print(f"created {design.pretty_path(path)}  ({origin})\n")
+    print("Next:\n"
+          f"  1. open it in Inkscape, Figma or any text editor and make it "
+          f"yours\n"
+          f"  2. krakenlcd dash {args.name}\n"
+          f"     puts it on the cooler, and redraws it every time you save\n"
+          f"     (or: krakenlcd design preview {args.name} --watch, "
+          f"without a cooler)\n\n"
+          f"What can go between {{{{ }}}}: krakenlcd sensors, and "
+          f"docs/DESIGNS.md")
+    return 0
+
+
+def cmd_design_preview(args):
+    live = design.Live(args.design, _settings(args), smooth=0.0,
+                       demo=args.demo)
+    out = args.output or f"{live.design.name}-preview.png"
+    t0 = time.perf_counter()
+    image = live.frame(force=True)
+    took = (time.perf_counter() - t0) * 1000
+    image.save(out)
+    values = "made-up values" if args.demo else "this machine's readings"
+    print(f"wrote {out}: '{live.design.title}' with {values}, "
+          f"drawn in {took:.0f} ms")
+    if not args.watch:
+        return 0
+
+    _install_signal_handlers()
+    print("watching for changes to the design; Ctrl-C to stop", flush=True)
+    failed = None
+    while not _stop:
+        time.sleep(0.5)
+        reloaded = live.reload_if_changed()
+        try:
+            image = live.frame(force=reloaded)
+            failed = None
+        except design.DesignError as exc:
+            if str(exc) != failed:
+                print(f"[{_now()}] {exc}", file=sys.stderr, flush=True)
+            failed = str(exc)
+            continue
+        if image is not None:
+            image.save(out)
+            if reloaded:
+                print(f"[{_now()}] redrawn {out}", flush=True)
+    return 0
+
+
+def cmd_design_folder(args):
+    path = design.user_dir()
+    os.makedirs(path, exist_ok=True)
+    print(path)
+    if args.open:
+        try:
+            subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            print(f"could not open a file manager: {exc}", file=sys.stderr)
+            return 1
+    return 0
+
+
 def cmd_sensors(args):
     for line in sensors.describe_sources():
         print(line)
@@ -578,6 +676,45 @@ def build_parser():
     for flag, _ in _LEGACY_DASH:
         p.add_argument("--" + flag, dest="legacy_" + flag, help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_dash)
+
+    p = add("design", help="list, start and try out live designs")
+    actions = p.add_subparsers(dest="action", required=True, metavar="ACTION")
+
+    q = actions.add_parser("list", parents=[common],
+                           help="the designs there are, and where yours go")
+    q.set_defaults(func=cmd_design_list)
+
+    q = actions.add_parser("new", parents=[common],
+                           help="start a design of your own")
+    q.add_argument("name", help="what to call it")
+    q.add_argument("--from", dest="source", metavar="DESIGN",
+                   help="the design to copy (default %s)" % design.STARTER)
+    q.add_argument("--image", metavar="PICTURE",
+                   help="build it around a picture of yours instead, with "
+                        "the numbers on top")
+    q.set_defaults(func=cmd_design_new)
+
+    q = actions.add_parser("preview", parents=[common],
+                           help="draw a design into a PNG, no cooler needed")
+    q.add_argument("design", nargs="?", default=design.DEFAULT,
+                   help="name or path (default %(default)s)")
+    q.add_argument("--output", "-o", metavar="OUT.png",
+                   help="where to write it (default NAME-preview.png)")
+    q.add_argument("--demo", action="store_true",
+                   help="use made-up values instead of this machine's")
+    q.add_argument("--watch", "-w", action="store_true",
+                   help="keep redrawing as the design file changes")
+    add_settings_option(q)
+    q.set_defaults(func=cmd_design_preview)
+
+    q = actions.add_parser("folder", parents=[common],
+                           help="print the folder your designs go in")
+    q.add_argument("--open", action="store_true",
+                   help="and open it in the file manager")
+    q.set_defaults(func=cmd_design_folder)
+
+    add("designs", help="same as 'design list'"
+        ).set_defaults(func=cmd_design_list)
 
     add("sensors", help="what a design can show, and where it comes from"
         ).set_defaults(func=cmd_sensors)
