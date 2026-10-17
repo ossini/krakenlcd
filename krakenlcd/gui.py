@@ -2,7 +2,9 @@
 """A small Qt front end for the Kraken Z display.
 
 Pick a colour and the panel follows the sliders live; drop in a GIF and it
-plays; switch back to the firmware's own screen with one button.
+plays; pick a live design and it shows CPU, GPU and the rest as they change,
+redrawing whenever its file is saved; switch back to the firmware's own
+screen with one button.
 
 All device I/O happens on a single worker thread.  The USB bulk endpoint is
 not reentrant and a 2 MB GIF takes seconds to push, so doing this on the Qt
@@ -17,14 +19,16 @@ import time
 
 try:
     from PyQt6.QtCore import (QMutex, QMutexLocker, Qt, QThread, QTimer,
-                              QWaitCondition, pyqtSignal)
-    from PyQt6.QtGui import QBrush, QColor, QImage, QPainter, QPixmap
+                              QUrl, QWaitCondition, pyqtSignal)
+    from PyQt6.QtGui import (QBrush, QColor, QDesktopServices, QImage,
+                             QPainter, QPixmap)
     from PyQt6.QtWidgets import (QApplication, QButtonGroup, QCheckBox,
                                  QColorDialog, QComboBox, QDoubleSpinBox,
-                                 QFileDialog, QFrame, QGridLayout, QGroupBox,
-                                 QHBoxLayout, QLabel, QMainWindow,
-                                 QMessageBox, QPushButton, QRadioButton,
-                                 QSlider, QVBoxLayout, QWidget)
+                                 QFileDialog, QFormLayout, QFrame, QGridLayout,
+                                 QGroupBox, QHBoxLayout, QInputDialog, QLabel,
+                                 QLineEdit, QMainWindow, QMessageBox,
+                                 QPushButton, QRadioButton, QSlider,
+                                 QVBoxLayout, QWidget)
 except ImportError:
     raise SystemExit(
         "the GUI needs PyQt6.\n"
@@ -33,15 +37,23 @@ except ImportError:
         "Everything the GUI does is also available from the krakenlcd command."
     ) from None
 
-from . import media, state, tempscreen
+from . import design, media, state, tempscreen
 from .device import HEIGHT, WIDTH, DoubleBuffer, Kraken, read_hwmon_temp
 from .lowlevel import KrakenError
 
-MODE_SOLID, MODE_TEMP, MODE_GIF, MODE_FIRMWARE = range(4)
+MODE_SOLID, MODE_TEMP, MODE_GIF, MODE_FIRMWARE, MODE_DESIGN = range(5)
+
+# How often a live design is looked at: sensors read, file checked for edits.
+DESIGN_INTERVAL = 2.0
 
 
 def _hex(color) -> str:
     return "#%02x%02x%02x" % tuple(color)
+
+
+def _html(text: str) -> str:
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace("\n", "<br>"))
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +78,9 @@ class DeviceWorker(QThread):
         self._temp_interval = 2.0
         self._last_temp_push = 0.0
         self._last_shown = None
+        self._live = None           # design.Live while a design is shown
+        self._last_design_tick = 0.0
+        self._design_failed = None
         self.orientation = 0
 
     # -- called from the GUI thread ------------------------------------
@@ -125,6 +140,8 @@ class DeviceWorker(QThread):
                     self._emit_status(kraken)
                 if self._temp_mode is not None:
                     self._tick_temp(kraken, buffer)
+                if self._live is not None:
+                    self._tick_design(buffer)
         finally:
             kraken.close()
 
@@ -160,10 +177,35 @@ class DeviceWorker(QThread):
         except KrakenError as exc:
             self.failed.emit(str(exc))
 
+    def _tick_design(self, buffer, force=False):
+        now = time.monotonic()
+        if not force and now - self._last_design_tick < DESIGN_INTERVAL:
+            return
+        self._last_design_tick = now
+        live = self._live
+        try:
+            if live.reload_if_changed():
+                self.info.emit(f"reloaded {live.design.where}")
+            image = live.frame(force=force)
+            self._design_failed = None
+        except design.DesignError as exc:
+            # Said once, not every two seconds while it stays broken.
+            if str(exc) != self._design_failed:
+                self._design_failed = str(exc)
+                self.failed.emit(str(exc))
+            return
+        if image is not None:
+            try:
+                buffer.push(media.encode_frame(image, rotate=self.orientation))
+            except KrakenError as exc:
+                self.failed.emit(str(exc))
+
     def _run_job(self, kraken, buffer, job):
         kind, kw = job
         self.busy.emit(True)
         try:
+            if kind not in ("brightness", "orientation"):
+                self._live = None
             if kind == "solid":
                 self._temp_mode = None
                 buffer.push(media.solid(kw["color"]))
@@ -179,6 +221,16 @@ class DeviceWorker(QThread):
                     "--scale", str(kw.get("scale", 1.0)),
                     "--decimals", str(kw.get("decimals", 0)),
                     "--interval", str(self._temp_interval)])
+            elif kind == "design":
+                self._temp_mode = None
+                self._live = design.Live(kw["ref"], kw["settings"],
+                                         warn=self.info.emit)
+                self._design_failed = None
+                self._tick_design(buffer, force=True)
+                argv = ["dash", kw["ref"]]
+                for name, value in kw["settings"].items():
+                    argv += ["--set", f"{name}={value}"]
+                state.save_display(argv)
             elif kind == "gif":
                 self._temp_mode = None
                 self.info.emit(f"re-encoding {os.path.basename(kw['path'])} …")
@@ -206,6 +258,8 @@ class DeviceWorker(QThread):
                 kraken.set_orientation(kw["degrees"])
                 self.orientation = kw["degrees"]
                 self._last_shown = None
+                if self._live is not None:
+                    self._tick_design(buffer, force=True)
                 state.update(orientation=kw["degrees"])
             elif kind == "reset":
                 self._temp_mode = None
@@ -214,6 +268,7 @@ class DeviceWorker(QThread):
                 state.clear()
                 self.info.emit("buckets cleared, firmware screen restored")
         except (KrakenError, ValueError, OSError) as exc:
+            # design.DesignError is a ValueError: a broken design lands here.
             self.failed.emit(str(exc))
         finally:
             self.busy.emit(False)
@@ -262,6 +317,9 @@ class Window(QMainWindow):
         self.color = (255, 255, 255)
         self.gif_path = None
         self.mode = MODE_SOLID
+        self.design_name = None
+        self.design_settings = {}   # only what was changed from the defaults
+        self._preview_live = None
 
         self.worker = DeviceWorker()
         self.worker.status.connect(self.on_status)
@@ -277,7 +335,14 @@ class Window(QMainWindow):
         self._debounce.setInterval(150)
         self._debounce.timeout.connect(self.apply_mode)
 
+        # The preview of a live design follows the sensors on its own clock,
+        # so it works with no cooler attached as well.
+        self._design_timer = QTimer(self)
+        self._design_timer.setInterval(int(DESIGN_INTERVAL * 1000))
+        self._design_timer.timeout.connect(self.tick_design_preview)
+
         self._build()
+        self.refresh_designs()
         self.update_preview()
 
     # -- construction ---------------------------------------------------
@@ -300,21 +365,27 @@ class Window(QMainWindow):
 
         right = QVBoxLayout()
         right.setSpacing(12)
+        self.design_group = self._design_box()
+        self.color_group = self._color_box()
+        self.content_group = self._content_box()
         right.addWidget(self._mode_box())
-        right.addWidget(self._color_box())
-        right.addWidget(self._content_box())
+        right.addWidget(self.design_group)
+        right.addWidget(self.color_group)
+        right.addWidget(self.content_group)
         right.addWidget(self._panel_box())
         right.addStretch(1)
         root.addLayout(right, 1)
 
         self.setCentralWidget(central)
         self.statusBar().showMessage("connecting …")
+        self._sync_groups()
 
     def _mode_box(self):
         box = QGroupBox("What to show")
         layout = QVBoxLayout(box)
         self.mode_group = QButtonGroup(self)
         for value, text in ((MODE_SOLID, "Solid colour"),
+                            (MODE_DESIGN, "Live design (CPU, GPU, …)"),
                             (MODE_TEMP, "Liquid temperature"),
                             (MODE_GIF, "Image or GIF"),
                             (MODE_FIRMWARE, "Firmware screen (white)")):
@@ -323,6 +394,44 @@ class Window(QMainWindow):
             layout.addWidget(button)
         self.mode_group.button(MODE_SOLID).setChecked(True)
         self.mode_group.idClicked.connect(self.on_mode_changed)
+        return box
+
+    def _design_box(self):
+        box = QGroupBox("Live design")
+        layout = QVBoxLayout(box)
+
+        self.design_combo = QComboBox()
+        self.design_combo.activated.connect(self.on_design_chosen)
+        layout.addWidget(self.design_combo)
+
+        self.design_about = QLabel()
+        self.design_about.setWordWrap(True)
+        layout.addWidget(self.design_about)
+
+        # One field per setting of the chosen design, rebuilt on every change
+        # of design: the data-… attributes on its <svg> decide what is here.
+        self.settings_box = QWidget()
+        self.settings_form = QFormLayout(self.settings_box)
+        self.settings_form.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.settings_box)
+
+        buttons = QHBoxLayout()
+        new = QPushButton("New design …")
+        new.setToolTip("Start your own, as a copy of the selected design")
+        new.clicked.connect(self.on_new_design)
+        buttons.addWidget(new)
+        edit = QPushButton("Edit")
+        edit.setToolTip("Open the design's SVG file; the display redraws "
+                        "whenever you save it")
+        edit.clicked.connect(self.on_edit_design)
+        buttons.addWidget(edit)
+        folder = QPushButton("Open folder")
+        folder.setToolTip(f"Your designs live in "
+                          f"{design.pretty_path(design.user_dir())}: drop "
+                          f"folders or .svg files in there")
+        folder.clicked.connect(self.on_open_design_folder)
+        buttons.addWidget(folder)
+        layout.addLayout(buttons)
         return box
 
     def _color_box(self):
@@ -420,8 +529,164 @@ class Window(QMainWindow):
 
     def on_mode_changed(self, value):
         self.mode = value
+        self._sync_groups()
+        self._sync_design_timer()
         self.update_preview()
         self.apply_mode()
+
+    # -- live designs ---------------------------------------------------
+
+    def refresh_designs(self, select=None):
+        """Fill the design list again, e.g. after a new one was dropped in."""
+        select = select or self.design_name or design.DEFAULT
+        self.design_combo.clear()
+        for entry in design.available():
+            label = entry.name if entry.builtin else f"{entry.name}  (yours)"
+            self.design_combo.addItem(label, entry.name)
+        index = self.design_combo.findData(select)
+        self.design_combo.setCurrentIndex(max(0, index))
+        self.load_design(self.design_combo.currentData())
+
+    def load_design(self, name):
+        self.design_name = name
+        self.design_settings = {}
+        self._preview_live = None
+        while self.settings_form.rowCount():
+            self.settings_form.removeRow(0)
+        try:
+            loaded = design.load(name)
+        except design.DesignError as exc:
+            self.design_about.setText(f"<span style='color:#d8342a'>"
+                                      f"{_html(str(exc))}</span>")
+            return
+        self.design_about.setText(_html(loaded.description or loaded.title))
+        for setting, value in loaded.settings.items():
+            self.settings_form.addRow(setting.replace("_", " "),
+                                      self._setting_field(setting, value))
+
+    def _setting_field(self, name, value):
+        text = str(value)
+        field = QLineEdit(text)
+        field.editingFinished.connect(
+            lambda: self.on_setting_changed(name, field.text()))
+        if not text.startswith("#") or len(text) not in (4, 7):
+            return field
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(field, 1)
+        swatch = QPushButton()
+        swatch.setFixedSize(26, 22)
+
+        def paint(colour):
+            swatch.setStyleSheet(f"background:{colour};border:1px solid #666;"
+                                 f"border-radius:3px")
+
+        def pick():
+            chosen = QColorDialog.getColor(QColor(field.text()), self, name)
+            if chosen.isValid():
+                field.setText(chosen.name())
+                paint(chosen.name())
+                self.on_setting_changed(name, chosen.name())
+
+        paint(text)
+        swatch.clicked.connect(pick)
+        layout.addWidget(swatch)
+        return row
+
+    def on_design_chosen(self, index):
+        self.load_design(self.design_combo.itemData(index))
+        # Picking a design means wanting to see it.
+        self.mode_group.button(MODE_DESIGN).setChecked(True)
+        self.on_mode_changed(MODE_DESIGN)
+
+    def on_setting_changed(self, name, text):
+        if self.design_settings.get(name) == text:
+            return
+        self.design_settings[name] = text
+        self._preview_live = None
+        if self.mode == MODE_DESIGN:
+            self.update_preview()
+            self.schedule_apply()
+
+    def on_new_design(self):
+        name, ok = QInputDialog.getText(
+            self, "New design", "Name for your design (letters, digits, - "
+            "and _):")
+        if not ok or not name.strip():
+            return
+        try:
+            path = design.create(name.strip(), source=self.design_name)
+        except (design.DesignError, OSError) as exc:
+            QMessageBox.warning(self, "New design", str(exc))
+            return
+        self.refresh_designs(select=name.strip())
+        self.on_design_chosen(self.design_combo.currentIndex())
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        self.statusBar().showMessage(
+            f"created {design.pretty_path(path)} -- save it and the display "
+            f"follows", 10000)
+
+    def on_edit_design(self):
+        try:
+            entry = design.find(self.design_name)
+        except design.DesignError as exc:
+            self.on_failed(str(exc))
+            return
+        if entry.builtin:
+            answer = QMessageBox.question(
+                self, "Edit design",
+                f"'{entry.name}' comes with krakenlcd and is replaced on the "
+                f"next update.  Make a copy of your own to edit instead?")
+            if answer == QMessageBox.StandardButton.Yes:
+                self.on_new_design()
+            return
+        path = entry.path if not os.path.isdir(entry.path) \
+            else design.load(entry).svg_path
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def on_open_design_folder(self):
+        path = design.user_dir()
+        os.makedirs(path, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def _sync_groups(self):
+        """Only the controls that do something in the current mode."""
+        self.design_group.setVisible(self.mode == MODE_DESIGN)
+        self.color_group.setVisible(self.mode in (MODE_SOLID, MODE_TEMP))
+        self.content_group.setVisible(self.mode in (MODE_GIF, MODE_TEMP))
+        self.adjustSize()
+
+    def _sync_design_timer(self):
+        if self.mode == MODE_DESIGN:
+            self._design_timer.start()
+        else:
+            self._design_timer.stop()
+
+    def _design_preview_live(self):
+        if self._preview_live is None and self.design_name:
+            self._preview_live = design.Live(
+                self.design_name, self.design_settings,
+                warn=lambda message: self.on_info(message))
+        return self._preview_live
+
+    def tick_design_preview(self):
+        try:
+            live = self._design_preview_live()
+            if live is None:
+                return
+            if live.reload_if_changed():
+                self.load_design_about(live)
+            image = live.frame()
+        except design.DesignError as exc:
+            self.on_failed(str(exc))
+            return
+        if image is not None:
+            self.preview.show_rgb(image.tobytes())
+
+    def load_design_about(self, live):
+        self.design_about.setText(
+            _html(live.design.description or live.design.title))
 
     def on_color_changed(self):
         self.color = tuple(s.value() for s, _ in self.channels)
@@ -452,9 +717,7 @@ class Window(QMainWindow):
         self.gif_path = path
         self.gif_label.setText(path)
         self.mode_group.button(MODE_GIF).setChecked(True)
-        self.mode = MODE_GIF
-        self.update_preview()
-        self.apply_mode()
+        self.on_mode_changed(MODE_GIF)
 
     def schedule_apply(self):
         self._debounce.start()
@@ -462,6 +725,10 @@ class Window(QMainWindow):
     def apply_mode(self):
         if self.mode == MODE_SOLID:
             self.worker.submit("solid", color=self.color)
+        elif self.mode == MODE_DESIGN:
+            if self.design_name:
+                self.worker.submit("design", ref=self.design_name,
+                                   settings=dict(self.design_settings))
         elif self.mode == MODE_TEMP:
             self.worker.submit("temp", color=self.color,
                                scale=self.scale_spin.value(),
@@ -480,6 +747,12 @@ class Window(QMainWindow):
         try:
             if self.mode == MODE_SOLID:
                 self.preview.show_solid(self.color)
+            elif self.mode == MODE_DESIGN:
+                live = self._design_preview_live()
+                if live is None:
+                    self.preview.show_solid((0, 0, 0))
+                else:
+                    self.preview.show_rgb(live.frame(force=True).tobytes())
             elif self.mode == MODE_TEMP:
                 temp = read_hwmon_temp() or 30.0
                 self.preview.show_rgb(tempscreen.render(
@@ -496,6 +769,9 @@ class Window(QMainWindow):
                     scale=0.65))
             else:
                 self.preview.show_solid((0, 0, 0))
+        except design.DesignError as exc:
+            self.on_failed(str(exc))
+            self.preview.show_solid((0, 0, 0))
         except Exception:
             self.preview.show_solid((0, 0, 0))
 
