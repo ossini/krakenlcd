@@ -343,6 +343,16 @@ can point it at any TTF with `--font`.
 Only `1e71:3008` is supported. The Kraken 2023/Elite models use a 640×640
 panel and, on some firmware revisions, a different image format.
 
+## Contributing
+
+Bug reports, designs and code are welcome. [CONTRIBUTING.md](CONTRIBUTING.md)
+says how; the tests run without a cooler:
+
+```sh
+pip install -e '.[gui]'
+python -m unittest discover -s tests
+```
+
 ## Documentation
 
 * [docs/DESIGNS.md](docs/DESIGNS.md) — making your own live design
@@ -363,3 +373,20 @@ Not affiliated with or endorsed by NZXT.
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+## A note on how this was made
+
+krakenlcd stands on other people's work: the display protocol was mapped by
+[liquidctl](https://github.com/liquidctl/liquidctl), designs are drawn by
+[resvg](https://github.com/linebender/resvg) and
+[Pillow](https://python-pillow.org/), the GUI is
+[Qt](https://www.qt.io/) through [PyQt6](https://www.riverbankcomputing.com/software/pyqt/),
+and the built-in designs are set in
+[Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) and
+[JetBrains Mono](https://www.jetbrains.com/lp/mono/).
+
+Large parts of the code and documentation were written with the help of
+LLMs. Using them for improvements is explicitly welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md#using-llms) for what we ask of such
+contributions, and [AGENTS.md](AGENTS.md) for the instructions coding agents
+follow.
