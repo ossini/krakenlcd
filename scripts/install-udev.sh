@@ -3,7 +3,7 @@
 # Fully revertible with scripts/uninstall-udev.sh
 set -eu
 
-RULE_SRC="$(CDPATH= cd -- "$(dirname -- "$0")/../udev" && pwd)/99-nzxt-kraken-z.rules"
+RULE_SRC="$(CDPATH='' cd -- "$(dirname -- "$0")/../udev" && pwd)/99-nzxt-kraken-z.rules"
 RULE_DST="/etc/udev/rules.d/99-nzxt-kraken-z.rules"
 
 if [ ! -f "$RULE_SRC" ]; then

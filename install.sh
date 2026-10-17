@@ -224,7 +224,7 @@ fi
 SELFDIR=''
 case "${0:-}" in
     ''|sh|-|bash|dash) ;;
-    *) SELFDIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || true)" ;;
+    *) SELFDIR="$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || true)" ;;
 esac
 
 TMPDIR_="$(mktemp -d)"
@@ -270,7 +270,7 @@ PIP="$VENV/bin/pip"
 
 if [ "$WITH_GUI" = 1 ]; then
     say "installing krakenlcd with the GUI (this pulls in PyQt6, ~60 MB)"
-    if ! "$PIP" install --quiet --upgrade "$SRCDIR[gui]"; then
+    if ! "$PIP" install --quiet --upgrade "${SRCDIR}[gui]"; then
         warn "install with the GUI failed — falling back to the CLI only"
         WITH_GUI=0
         "$PIP" install --quiet --upgrade "$SRCDIR" || die "pip install failed"
@@ -372,7 +372,11 @@ fi
 
 echo
 say "${GRN}krakenlcd installed${R}"
-[ "$WITH_GUI" = 1 ] && note "commands: krakenlcd, krakenlcd-gui" || note "command: krakenlcd (no GUI)"
+if [ "$WITH_GUI" = 1 ]; then
+    note "commands: krakenlcd, krakenlcd-gui"
+else
+    note "command: krakenlcd (no GUI)"
+fi
 
 case ":$PATH:" in
     *":$BINDIR:"*) ;;
@@ -393,7 +397,8 @@ if command -v lsusb >/dev/null 2>&1 && ! lsusb -d 1e71:3008 >/dev/null 2>&1; the
     note "Only the Z53/Z63/Z73 are supported; the 2023/Elite models use a different panel."
 else
     note "Try it:  krakenlcd status"
-    note "         krakenlcd fill '#ff0000'"
+    note "         krakenlcd dash          # live CPU/GPU dashboard"
+    note "         krakenlcd design list   # more designs, and making your own"
     note "         krakenlcd liquid        # back to the firmware screen"
 fi
 
