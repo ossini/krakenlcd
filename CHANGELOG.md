@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0b1 (unreleased)
+## 0.2.0b1 (2026-10-17)
 
 * **Live designs.** `krakenlcd dash [DESIGN]` shows a live dashboard, and a
   design is an SVG file with placeholders like `{{ cpu }}` where the numbers
