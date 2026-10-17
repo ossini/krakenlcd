@@ -1,7 +1,7 @@
 #!/bin/sh
 # krakenlcd installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/ossini/krakenlcd/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ossini/krakenlcd/master/install.sh | sh
 #
 # Installs into an isolated virtualenv under ~/.local/share/krakenlcd, links the
 # two commands into ~/.local/bin, and installs the udev rule that grants your
@@ -13,7 +13,7 @@
 #   --no-gui        skip PyQt6, install the CLI only
 #   --no-udev       skip the udev rule (the tools then need root)
 #   --uninstall     remove everything this script installed
-#   --ref REF       branch, tag or commit to install (default: main)
+#   --ref REF       branch, tag or commit to install (default: master)
 #   --repo USER/REPO source repository (default: ossini/krakenlcd)
 #   --prefix DIR    base for bin/ and share/ (default: ~/.local)
 #   --help
@@ -23,7 +23,7 @@
 set -eu
 
 REPO="${KRAKENLCD_REPO:-ossini/krakenlcd}"
-REF="${KRAKENLCD_REF:-main}"
+REF="${KRAKENLCD_REF:-master}"
 PREFIX="${KRAKENLCD_PREFIX:-$HOME/.local}"
 WITH_GUI=1
 WITH_UDEV=1
@@ -53,7 +53,7 @@ usage() {
     cat <<'EOF'
 krakenlcd installer.
 
-  curl -fsSL https://raw.githubusercontent.com/ossini/krakenlcd/main/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/ossini/krakenlcd/master/install.sh | sh
 
 Installs into an isolated virtualenv under ~/.local/share/krakenlcd, links the
 two commands into ~/.local/bin, and installs the udev rule that grants your
@@ -65,7 +65,7 @@ Options (append after `| sh -s --`, e.g. `... | sh -s -- --no-gui`):
   --no-udev        skip the udev rule (the tools then need root)
   --no-service     skip the systemd user service that restores the display
   --uninstall      remove everything this script installed
-  --ref REF        branch, tag or commit to install (default: main)
+  --ref REF        branch, tag or commit to install (default: master)
   --repo USER/REPO  source repository (default: ossini/krakenlcd)
   --prefix DIR     base for bin/ and share/ (default: ~/.local)
   -h, --help       this text

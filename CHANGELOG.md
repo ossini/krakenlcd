@@ -43,6 +43,8 @@
   License, texts alongside). A design's own fonts sit next to it; system
   fonts are found through fontconfig.
 * `krakenlcd --version`.
+* Fixed: the one-line installer downloaded from a `main` branch that does
+  not exist, so `curl … | sh` failed with a 404. It uses `master` now.
 * Unit tests (`python -m unittest discover -s tests`), run on every push by
   GitHub Actions, along with the GUI offscreen and the install script.
 

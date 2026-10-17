@@ -42,7 +42,7 @@ not need Pillow or resvg either.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ossini/krakenlcd/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ossini/krakenlcd/master/install.sh | sh
 ```
 
 That is the whole thing. The script
@@ -65,7 +65,7 @@ Options go after `sh -s --`:
 curl -fsSL .../install.sh | sh -s -- --no-gui      # CLI only, skips PyQt6
 curl -fsSL .../install.sh | sh -s -- --no-udev     # no udev rule; needs root to run
 curl -fsSL .../install.sh | sh -s -- --no-service  # no autostart at login
-curl -fsSL .../install.sh | sh -s -- --ref v0.1.0  # a tag instead of main
+curl -fsSL .../install.sh | sh -s -- --ref v0.2.0b1 # a release instead of master
 ```
 
 `--prefix DIR` moves both directories elsewhere; `--help` lists everything.
