@@ -224,7 +224,7 @@ fi
 SELFDIR=''
 case "${0:-}" in
     ''|sh|-|bash|dash) ;;
-    *) SELFDIR="$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || true)" ;;
+    *) SELFDIR="$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)" || SELFDIR='' ;;
 esac
 
 TMPDIR_="$(mktemp -d)"
