@@ -100,7 +100,8 @@ for d in swiss simple duo; do
     krakenlcd design preview "$d" --demo -o "/tmp/$d.png"
 done                                     # and look at the PNGs
 
-shellcheck install.sh scripts/*.sh       # if you touched a shell script
+shellcheck install.sh scripts/*.sh       # if you touched a shell script;
+                                         # CI pins shellcheck-py==0.11.0.1
 ```
 
 Then check whichever of these apply:
